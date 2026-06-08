@@ -77,6 +77,14 @@ try {
             pan TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
     ");
 
     // Dynamic database migration check for existing tables
@@ -112,6 +120,21 @@ try {
             ':address' => '123 Heritage Temple Street, Community District, Pin: 400001',
             ':phone' => '+91 98765 43210',
             ':email' => 'contact@communitytrust.org'
+        ]);
+    }
+
+    // Seed default admin user if empty
+    $stmt_user = $pdo->query("SELECT COUNT(*) FROM users");
+    if ($stmt_user->fetchColumn() == 0) {
+        $stmt_insert_user = $pdo->prepare("
+            INSERT INTO users (id, username, password, role) 
+            VALUES (:id, :username, :password, :role)
+        ");
+        $stmt_insert_user->execute([
+            ':id' => 'admin_default',
+            ':username' => 'Admin',
+            ':password' => password_hash('Sumo@123', PASSWORD_BCRYPT),
+            ':role' => 'admin'
         ]);
     }
     
@@ -151,5 +174,17 @@ function generateUuid() {
 // Helper to check syntax or format currency in INR style
 function formatCurrency($amount) {
     return '₹' . number_format((double)$amount, 2, '.', ',');
+}
+
+// Global Session check for page protection (redirect to login.php if not authenticated)
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+$current_script = basename($_SERVER['SCRIPT_NAME']);
+if ($current_script !== 'login.php' && $current_script !== 'view_image.php') {
+    if (empty($_SESSION['user_id'])) {
+        header("Location: login.php");
+        exit;
+    }
 }
 ?>

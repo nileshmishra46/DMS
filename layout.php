@@ -18,6 +18,11 @@ function render_header($title = 'Community Donation Manager', $current_page = 'd
         'reports' => ['label' => 'Reports', 'url' => 'reports.php', 'icon' => 'line-chart'],
         'settings' => ['label' => 'Settings', 'url' => 'settings.php', 'icon' => 'settings']
     ];
+
+    // Add Admin Panel dynamically if user is admin
+    if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin') {
+        $menu_items['users'] = ['label' => 'Admin Panel', 'url' => 'users.php', 'icon' => 'users'];
+    }
     
     ?>
     <?php
@@ -332,9 +337,28 @@ function render_header($title = 'Community Donation Manager', $current_page = 'd
                     </a>
                 <?php endforeach; ?>
             </nav>
-            <div class="p-4 border-t border-slate-100 dark:border-stone-800 bg-slate-50 dark:bg-stone-900/50 flex flex-col items-center justify-center">
-                <p class="text-xs text-slate-400 text-center font-medium">Community Donation Manager</p>
-                <p class="text-[10px] text-slate-400 text-center">Version 1.1.0 (PHP + SQLite)</p>
+            <div class="p-4 border-t border-slate-100 dark:border-stone-800 bg-slate-50 dark:bg-stone-900/50 flex flex-col gap-3">
+                <?php if (!empty($_SESSION['username'])): ?>
+                    <div class="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-stone-850">
+                        <div class="flex items-center gap-2">
+                            <div class="h-8 w-8 rounded-lg bg-primary-500/10 text-primary-600 dark:text-primary-400 border border-primary-500/20 flex items-center justify-center font-bold text-sm shrink-0">
+                                <i data-lucide="user" class="h-4 w-4"></i>
+                            </div>
+                            <div class="flex flex-col">
+                                <span class="text-xs font-bold text-slate-800 dark:text-stone-200"><?php echo htmlspecialchars($_SESSION['username']); ?></span>
+                                <span class="text-[9px] font-bold uppercase text-slate-400 dark:text-stone-500 tracking-wider"><?php echo htmlspecialchars($_SESSION['user_role']); ?></span>
+                            </div>
+                        </div>
+                        <a href="logout.php" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200/50 dark:border-rose-900/30 text-rose-600 dark:text-rose-450 hover:bg-rose-500/10 text-xs font-bold transition-all" title="Log Out">
+                            <i data-lucide="log-out" class="h-3.5 w-3.5"></i>
+                            Logout
+                        </a>
+                    </div>
+                <?php endif; ?>
+                <div class="flex flex-col items-center justify-center">
+                    <p class="text-xs text-slate-400 text-center font-medium">Community Donation Manager</p>
+                    <p class="text-[10px] text-slate-400 text-center">Version 1.1.0 (PHP + SQLite)</p>
+                </div>
             </div>
         </aside>
 
@@ -371,11 +395,28 @@ function render_header($title = 'Community Donation Manager', $current_page = 'd
             </nav>
 
             <!-- Sidebar Footer -->
-            <div class="p-4 border-t border-slate-100 dark:border-stone-800 bg-slate-50/50 dark:bg-stone-900/30 shrink-0">
+            <div class="p-4 border-t border-slate-100 dark:border-stone-800 bg-slate-50/50 dark:bg-stone-900/30 shrink-0 space-y-3">
                 <div class="flex items-center justify-between text-xs text-slate-400 dark:text-stone-500 font-medium">
                     <span>Active FY: <?php echo htmlspecialchars(getFinancialYear(date('Y-m-d'))); ?></span>
                     <span class="bg-primary-100 dark:bg-primary-950/70 text-primary-700 dark:text-primary-400 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Active</span>
                 </div>
+                
+                <?php if (!empty($_SESSION['username'])): ?>
+                    <div class="flex items-center justify-between pt-2.5 border-t border-slate-150/40 dark:border-stone-800/40">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <div class="h-7.5 w-7.5 rounded-lg bg-primary-500/10 text-primary-600 dark:text-primary-400 border border-primary-500/20 flex items-center justify-center font-bold text-xs shrink-0">
+                                <i data-lucide="user" class="h-3.5 w-3.5"></i>
+                            </div>
+                            <div class="flex flex-col min-w-0">
+                                <span class="text-xs font-bold text-slate-800 dark:text-stone-200 truncate"><?php echo htmlspecialchars($_SESSION['username']); ?></span>
+                                <span class="text-[9px] font-bold uppercase text-slate-400 dark:text-stone-500 tracking-wider truncate"><?php echo htmlspecialchars($_SESSION['user_role']); ?></span>
+                            </div>
+                        </div>
+                        <a href="logout.php" class="p-1.5 rounded-lg text-slate-400 dark:text-stone-500 hover:text-rose-600 dark:hover:text-rose-450 hover:bg-rose-500/10 transition-colors" title="Log Out">
+                            <i data-lucide="log-out" class="h-4 w-4"></i>
+                        </a>
+                    </div>
+                <?php endif; ?>
             </div>
         </aside>
 

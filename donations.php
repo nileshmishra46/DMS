@@ -1020,36 +1020,34 @@ render_header('Donations Registry', 'donations');
         const amtWords = convertNumberToWords(donation.amount);
         doc.text(amtWords, 13, finalY + 7.5);
 
-        // 8. Signatures & Thanks
-        finalY += 16;
+        // 8. Signatures & Digitally Generated Notice
+        const signY = finalY + 16;
         
         // Notes if any
         if (donation.notes) {
             doc.setFont('Helvetica', 'italic');
             doc.setFontSize(7.5);
             doc.setTextColor(148, 163, 184);
-            const notesLines = doc.splitTextToSize("Note: " + donation.notes, (pageWidth - 20) / 2);
-            doc.text(notesLines, 10, finalY);
+            const notesLines = doc.splitTextToSize("Note: " + donation.notes, pageWidth - 24);
+            doc.text(notesLines, 12, signY);
         }
 
-        // Thank You text
-        doc.setFont('Helvetica', 'bold');
-        doc.setFontSize(8);
-        doc.setTextColor(37, 99, 235);
-        doc.text("Thank you for your generous contribution!", 10, pageHeight - 15);
+        // Center aligned Digital Receipt Notice
+        const noticeY = pageHeight - 24;
+        doc.setDrawColor(226, 232, 240); // slate-200
+        doc.setLineWidth(0.3);
+        doc.line(12, noticeY - 4, pageWidth - 12, noticeY - 4);
 
-        // Sign area
-        doc.setFont('Helvetica', 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(71, 85, 105);
-        doc.text("For " + orgName, pageWidth - 55, finalY, { align: 'center' });
-
-        doc.setDrawColor(203, 213, 225); // slate-300
-        doc.line(pageWidth - 75, pageHeight - 18, pageWidth - 15, pageHeight - 18);
-        
-        doc.setFont('Helvetica', 'bold');
+        doc.setFont('Helvetica', 'italic');
         doc.setFontSize(7.5);
-        doc.text("Authorized Signatory", pageWidth - 45, pageHeight - 14, { align: 'center' });
+        doc.setTextColor(120, 113, 108); // stone-500
+        doc.text("This is a computer-generated receipt and does not require a physical signature.", pageWidth / 2, noticeY, { align: 'center' });
+
+        // Thank you text at the bottom
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.text("Thank you for your valuable contribution!", pageWidth / 2, pageHeight - 14, { align: 'center' });
 
         // Save PDF file
         const filename = "Receipt_" + donation.receipt_no + ".pdf";
