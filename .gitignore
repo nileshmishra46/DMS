@@ -1,0 +1,5 @@
+database.sqlite
+*.log
+.system_generated/
+php_out.txt
+php_out2.txt

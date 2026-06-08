@@ -1,0 +1,22 @@
+{
+  "name": "Community Donation Manager",
+  "short_name": "Donation Manager",
+  "description": "Lightweight, modern donation and expense management web application for community trusts.",
+  "start_url": "index.php",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "public/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "public/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
