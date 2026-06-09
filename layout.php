@@ -19,6 +19,21 @@ function render_header($title = 'Community Donation Manager', $current_page = 'd
         'settings' => ['label' => 'Settings', 'url' => 'settings.php', 'icon' => 'settings']
     ];
 
+    // Filter menu items for standard users based on allowed pages
+    if (isset($_SESSION['user_role']) && $_SESSION['user_role'] !== 'admin') {
+        $allowed_str = $_SESSION['allowed_pages'] ?? null;
+        if ($allowed_str === null) {
+            $allowed_pages = ['dashboard', 'donations', 'expenses', 'reports', 'settings'];
+        } else {
+            $allowed_pages = array_filter(array_map('trim', explode(',', $allowed_str)));
+        }
+        foreach ($menu_items as $key => $item) {
+            if (!in_array($key, $allowed_pages)) {
+                unset($menu_items[$key]);
+            }
+        }
+    }
+
     // Add Admin Panel dynamically if user is admin
     if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin') {
         $menu_items['users'] = ['label' => 'Admin Panel', 'url' => 'users.php', 'icon' => 'users'];

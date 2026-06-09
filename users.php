@@ -21,6 +21,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $password = $_POST['password'] ?? '';
     $role = trim($_POST['role'] ?? 'user');
     
+    // Parse allowed pages
+    $allowed_pages_arr = $_POST['allowed_pages'] ?? [];
+    $valid_pages = ['dashboard', 'donations', 'expenses', 'reports', 'settings'];
+    $allowed_pages_arr = array_intersect($allowed_pages_arr, $valid_pages);
+    $allowed_pages_str = implode(',', $allowed_pages_arr);
+    
+    if ($role === 'admin') {
+        $allowed_pages_str = 'dashboard,donations,expenses,reports,settings';
+    }
+    
     // Validations
     if (empty($username) || empty($password)) {
         $error = 'All fields are required.';
@@ -40,16 +50,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             } else {
                 // Insert User
                 $stmt_insert = $db->prepare("
-                    INSERT INTO users (id, username, password, role) 
-                    VALUES (:id, :username, :password, :role)
+                    INSERT INTO users (id, username, password, role, allowed_pages) 
+                    VALUES (:id, :username, :password, :role, :allowed_pages)
                 ");
                 $stmt_insert->execute([
                     ':id' => generateUuid(),
                     ':username' => $username,
                     ':password' => password_hash($password, PASSWORD_BCRYPT),
-                    ':role' => $role
+                    ':role' => $role,
+                    ':allowed_pages' => $allowed_pages_str
                 ]);
                 $message = "User account '{$username}' created successfully.";
+            }
+        } catch (Exception $e) {
+            $error = 'Database error: ' . $e->getMessage();
+        }
+    }
+}
+
+// Handle Edit User Post
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update') {
+    $id = trim($_POST['id'] ?? '');
+    $password = $_POST['password'] ?? '';
+    $role = trim($_POST['role'] ?? 'user');
+    
+    // Check if user exists
+    $stmt_u = $db->prepare("SELECT * FROM users WHERE id = :id");
+    $stmt_u->execute([':id' => $id]);
+    $user_record = $stmt_u->fetch();
+    
+    if (!$user_record) {
+        $error = 'User not found.';
+    } elseif (strtolower($user_record['username']) === 'admin' && $role !== 'admin') {
+        $error = 'System Protection: Default admin account role cannot be changed.';
+    } elseif ($id === $_SESSION['user_id'] && $role !== 'admin' && $user_record['role'] === 'admin') {
+        $error = 'Security check: You cannot demote your own account from administrator.';
+    } elseif (!in_array($role, ['admin', 'user'])) {
+        $error = 'Invalid role selected.';
+    } else {
+        try {
+            $allowed_pages_arr = $_POST['allowed_pages'] ?? [];
+            $valid_pages = ['dashboard', 'donations', 'expenses', 'reports', 'settings'];
+            $allowed_pages_arr = array_intersect($allowed_pages_arr, $valid_pages);
+            $allowed_pages_str = implode(',', $allowed_pages_arr);
+            
+            if ($role === 'admin') {
+                $allowed_pages_str = 'dashboard,donations,expenses,reports,settings';
+            }
+            
+            if (!empty($password)) {
+                if (strlen($password) < 4) {
+                    $error = 'Password must be at least 4 characters long.';
+                } else {
+                    $stmt_up = $db->prepare("
+                        UPDATE users 
+                        SET password = :password, role = :role, allowed_pages = :allowed_pages
+                        WHERE id = :id
+                    ");
+                    $stmt_up->execute([
+                        ':password' => password_hash($password, PASSWORD_BCRYPT),
+                        ':role' => $role,
+                        ':allowed_pages' => $allowed_pages_str,
+                        ':id' => $id
+                    ]);
+                    $message = "User '{$user_record['username']}' updated successfully (including password).";
+                }
+            } else {
+                $stmt_up = $db->prepare("
+                    UPDATE users 
+                    SET role = :role, allowed_pages = :allowed_pages
+                    WHERE id = :id
+                ");
+                $stmt_up->execute([
+                    ':role' => $role,
+                    ':allowed_pages' => $allowed_pages_str,
+                    ':id' => $id
+                ]);
+                $message = "User '{$user_record['username']}' updated successfully.";
             }
         } catch (Exception $e) {
             $error = 'Database error: ' . $e->getMessage();
@@ -93,7 +170,7 @@ if (isset($_GET['msg']) && $_GET['msg'] === 'deleted' && isset($_GET['username']
 }
 
 // Retrieve list of users
-$users = $db->query("SELECT id, username, role, created_at FROM users ORDER BY username ASC")->fetchAll();
+$users = $db->query("SELECT id, username, role, allowed_pages, created_at FROM users ORDER BY username ASC")->fetchAll();
 
 render_header('User Accounts Management', 'users');
 ?>
@@ -168,6 +245,15 @@ render_header('User Accounts Management', 'users');
                                     <i data-lucide="user" class="h-3 w-3"></i>
                                     Standard Staff
                                 </span>
+                                <?php 
+                                $upages = array_filter(array_map('trim', explode(',', $u['allowed_pages'] ?? '')));
+                                if ($u['allowed_pages'] === null) {
+                                    $upages = ['dashboard', 'donations', 'expenses', 'reports', 'settings'];
+                                }
+                                ?>
+                                <div class="text-[10px] text-slate-400 dark:text-stone-500 mt-1 font-semibold">
+                                    Allowed: <?php echo empty($upages) ? 'None' : implode(', ', array_map('ucfirst', $upages)); ?>
+                                </div>
                             <?php endif; ?>
                         </td>
                         
@@ -179,19 +265,29 @@ render_header('User Accounts Management', 'users');
                         <!-- Actions -->
                         <td class="px-6 py-4.5 text-right whitespace-nowrap">
                             <?php 
-                            // Disable delete for logged-in user and default admin
-                            $is_protected = ($u['id'] === $_SESSION['user_id'] || strtolower($u['username']) === 'admin');
-                            if ($is_protected): 
+                            $is_default_admin = (strtolower($u['username']) === 'admin');
+                            if ($is_default_admin): 
                             ?>
                                 <button disabled class="p-2 text-slate-200 dark:text-stone-850 cursor-not-allowed" title="System Protected">
                                     <i data-lucide="trash-2" class="h-4.5 w-4.5"></i>
                                 </button>
                             <?php else: ?>
-                                <a href="users.php?delete_id=<?php echo urlencode($u['id']); ?>"
-                                   onclick="return confirm('Are you sure you want to delete user account \'<?php echo htmlspecialchars($u['username']); ?>\'?')"
-                                   class="p-2 text-slate-400 dark:text-stone-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-all inline-block" title="Delete User">
-                                    <i data-lucide="trash-2" class="h-4.5 w-4.5"></i>
-                                </a>
+                                <button onclick="openEditUserModal(<?php echo htmlspecialchars(json_encode($u)); ?>)"
+                                        class="p-2 text-slate-400 dark:text-stone-500 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-500/10 rounded-xl transition-all inline-block" title="Edit User">
+                                    <i data-lucide="edit-3" class="h-4.5 w-4.5"></i>
+                                </button>
+                                
+                                <?php if ($u['id'] === $_SESSION['user_id']): ?>
+                                    <button disabled class="p-2 text-slate-200 dark:text-stone-800/30 dark:text-stone-700 cursor-not-allowed inline-block" title="You cannot delete yourself">
+                                        <i data-lucide="trash-2" class="h-4.5 w-4.5"></i>
+                                    </button>
+                                <?php else: ?>
+                                    <a href="users.php?delete_id=<?php echo urlencode($u['id']); ?>"
+                                       onclick="return confirm('Are you sure you want to delete user account \'<?php echo htmlspecialchars($u['username']); ?>\'?')"
+                                       class="p-2 text-slate-400 dark:text-stone-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-all inline-block" title="Delete User">
+                                        <i data-lucide="trash-2" class="h-4.5 w-4.5"></i>
+                                    </a>
+                                <?php endif; ?>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -240,12 +336,115 @@ render_header('User Accounts Management', 'users');
                 </select>
             </div>
 
+            <!-- Page Permissions Checklist -->
+            <div id="allowed_pages_section" class="space-y-2">
+                <span class="block text-xs font-bold text-slate-500 dark:text-stone-400 uppercase tracking-wider">Page Access Permissions</span>
+                <div class="grid grid-cols-2 gap-2 bg-slate-50/50 dark:bg-stone-900/30 p-3 rounded-xl border border-slate-200/40 dark:border-stone-800/40">
+                    <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-stone-300 cursor-pointer">
+                        <input type="checkbox" name="allowed_pages[]" value="dashboard" checked class="rounded text-primary-650 focus:ring-primary-500 border-slate-350 dark:border-stone-700 bg-white dark:bg-stone-900">
+                        <span>Dashboard</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-stone-300 cursor-pointer">
+                        <input type="checkbox" name="allowed_pages[]" value="donations" checked class="rounded text-primary-650 focus:ring-primary-500 border-slate-350 dark:border-stone-700 bg-white dark:bg-stone-900">
+                        <span>Donations</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-stone-300 cursor-pointer">
+                        <input type="checkbox" name="allowed_pages[]" value="expenses" checked class="rounded text-primary-650 focus:ring-primary-500 border-slate-350 dark:border-stone-700 bg-white dark:bg-stone-900">
+                        <span>Expenses</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-stone-300 cursor-pointer">
+                        <input type="checkbox" name="allowed_pages[]" value="reports" checked class="rounded text-primary-650 focus:ring-primary-500 border-slate-350 dark:border-stone-700 bg-white dark:bg-stone-900">
+                        <span>Reports</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-stone-300 cursor-pointer col-span-2">
+                        <input type="checkbox" name="allowed_pages[]" value="settings" checked class="rounded text-primary-650 focus:ring-primary-500 border-slate-350 dark:border-stone-700 bg-white dark:bg-stone-900">
+                        <span>Settings</span>
+                    </label>
+                </div>
+            </div>
+
             <!-- Modal footer actions -->
             <div class="flex items-center justify-end gap-2 pt-4 border-t border-slate-100/50 dark:border-stone-800/40">
                 <button type="button" onclick="closeModal('add-user-modal')" class="bg-slate-50 dark:bg-stone-900 border border-slate-200 dark:border-stone-800 text-slate-600 dark:text-stone-300 text-xs px-4.5 py-2.5 rounded-xl font-bold transition-all">Cancel</button>
                 <button type="submit" class="bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-700 hover:to-primary-600 text-white text-xs px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-primary-500/15 flex items-center gap-1.5 transform hover:scale-[1.01]">
                     <i data-lucide="check-circle" class="h-4 w-4"></i>
                     Create Account
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit User Modal -->
+<div id="edit-user-modal" class="hidden fixed inset-0 z-50 bg-stone-900/40 dark:bg-stone-950/60 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="glass-card border border-slate-200/50 dark:border-stone-800/40 rounded-2xl shadow-xl w-full max-w-md overflow-hidden transform scale-95 transition-transform duration-300 animate-fade-in-up">
+        <div class="px-6 py-4 border-b border-slate-150 dark:border-stone-800/40 flex items-center justify-between">
+            <h3 class="font-title font-bold text-slate-950 dark:text-stone-100 text-base">Edit User Account</h3>
+            <button onclick="closeModal('edit-user-modal')" class="p-1.5 rounded-lg border border-slate-200 dark:border-stone-800 text-slate-400 dark:text-stone-500 hover:bg-slate-50 dark:hover:bg-stone-900 hover:text-slate-600">
+                <i data-lucide="x" class="h-4.5 w-4.5"></i>
+            </button>
+        </div>
+        
+        <form action="users.php" method="POST" class="p-6 space-y-4">
+            <input type="hidden" name="action" value="update">
+            <input type="hidden" name="id" id="edit-id">
+            
+            <!-- Username ID (Read Only) -->
+            <div class="space-y-1.5">
+                <label class="block text-xs font-bold text-slate-500 dark:text-stone-400 uppercase tracking-wider">User ID (Username)</label>
+                <input type="text" id="edit-username" readonly 
+                       class="w-full glass-input rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-all bg-slate-100/50 dark:bg-stone-900/50 opacity-70 cursor-not-allowed">
+            </div>
+
+            <!-- Password -->
+            <div class="space-y-1.5">
+                <label for="password_edit" class="block text-xs font-bold text-slate-500 dark:text-stone-400 uppercase tracking-wider">Access Password (Leave blank to keep current)</label>
+                <input type="password" id="password_edit" name="password" placeholder="New Password (min 4 chars)" 
+                       class="w-full glass-input rounded-xl px-4 py-2.5 text-sm focus:outline-none transition-all">
+            </div>
+
+            <!-- Role Selector -->
+            <div class="space-y-1.5">
+                <label for="role_edit" class="block text-xs font-bold text-slate-500 dark:text-stone-400 uppercase tracking-wider">System Role</label>
+                <select id="role_edit" name="role" class="w-full glass-input rounded-xl px-3 py-2.5 text-sm focus:outline-none transition-all bg-white dark:bg-stone-900">
+                    <option value="user">Standard Staff (Add registry entries)</option>
+                    <option value="admin">Administrator (Full panel access)</option>
+                </select>
+            </div>
+
+            <!-- Page Permissions Checklist -->
+            <div id="edit_allowed_pages_section" class="space-y-2">
+                <span class="block text-xs font-bold text-slate-500 dark:text-stone-400 uppercase tracking-wider">Page Access Permissions</span>
+                <div class="grid grid-cols-2 gap-2 bg-slate-50/50 dark:bg-stone-900/30 p-3 rounded-xl border border-slate-200/40 dark:border-stone-800/40">
+                    <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-stone-300 cursor-pointer">
+                        <input type="checkbox" name="allowed_pages[]" value="dashboard" id="edit-perm-dashboard" class="rounded text-primary-650 focus:ring-primary-500 border-slate-350 dark:border-stone-700 bg-white dark:bg-stone-900">
+                        <span>Dashboard</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-stone-300 cursor-pointer">
+                        <input type="checkbox" name="allowed_pages[]" value="donations" id="edit-perm-donations" class="rounded text-primary-650 focus:ring-primary-500 border-slate-350 dark:border-stone-700 bg-white dark:bg-stone-900">
+                        <span>Donations</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-stone-300 cursor-pointer">
+                        <input type="checkbox" name="allowed_pages[]" value="expenses" id="edit-perm-expenses" class="rounded text-primary-650 focus:ring-primary-500 border-slate-350 dark:border-stone-700 bg-white dark:bg-stone-900">
+                        <span>Expenses</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-stone-300 cursor-pointer">
+                        <input type="checkbox" name="allowed_pages[]" value="reports" id="edit-perm-reports" class="rounded text-primary-650 focus:ring-primary-500 border-slate-350 dark:border-stone-700 bg-white dark:bg-stone-900">
+                        <span>Reports</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-stone-300 cursor-pointer col-span-2">
+                        <input type="checkbox" name="allowed_pages[]" value="settings" id="edit-perm-settings" class="rounded text-primary-650 focus:ring-primary-500 border-slate-350 dark:border-stone-700 bg-white dark:bg-stone-900">
+                        <span>Settings</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Modal footer actions -->
+            <div class="flex items-center justify-end gap-2 pt-4 border-t border-slate-100/50 dark:border-stone-800/40">
+                <button type="button" onclick="closeModal('edit-user-modal')" class="bg-slate-50 dark:bg-stone-900 border border-slate-200 dark:border-stone-800 text-slate-600 dark:text-stone-300 text-xs px-4.5 py-2.5 rounded-xl font-bold transition-all">Cancel</button>
+                <button type="submit" class="bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-700 hover:to-primary-600 text-white text-xs px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-primary-500/15 flex items-center gap-1.5 transform hover:scale-[1.01]">
+                    <i data-lucide="save" class="h-4 w-4"></i>
+                    Update Account
                 </button>
             </div>
         </form>
@@ -274,6 +473,70 @@ render_header('User Accounts Management', 'users');
                 modal.classList.add('hidden');
             }, 150);
         }
+    }
+
+    // Role selector change bindings to toggle permission checklist visibility
+    document.addEventListener('DOMContentLoaded', function() {
+        const roleNew = document.getElementById('role');
+        const sectionNew = document.getElementById('allowed_pages_section');
+        if (roleNew && sectionNew) {
+            roleNew.addEventListener('change', function() {
+                if (this.value === 'admin') {
+                    sectionNew.classList.add('hidden');
+                } else {
+                    sectionNew.classList.remove('hidden');
+                }
+            });
+        }
+
+        const roleEdit = document.getElementById('role_edit');
+        const sectionEdit = document.getElementById('edit_allowed_pages_section');
+        if (roleEdit && sectionEdit) {
+            roleEdit.addEventListener('change', function() {
+                if (this.value === 'admin') {
+                    sectionEdit.classList.add('hidden');
+                } else {
+                    sectionEdit.classList.remove('hidden');
+                }
+            });
+        }
+    });
+
+    // Populate and trigger edit user modal
+    function openEditUserModal(user) {
+        document.getElementById('edit-id').value = user.id;
+        document.getElementById('edit-username').value = user.username;
+        document.getElementById('password_edit').value = '';
+        document.getElementById('role_edit').value = user.role;
+
+        // Clear checkboxes
+        const checkboxKeys = ['dashboard', 'donations', 'expenses', 'reports', 'settings'];
+        checkboxKeys.forEach(k => {
+            document.getElementById('edit-perm-' + k).checked = false;
+        });
+
+        // Parse and check appropriate checkboxes
+        let allowedPages = [];
+        if (user.allowed_pages === null) {
+            allowedPages = ['dashboard', 'donations', 'expenses', 'reports', 'settings'];
+        } else if (user.allowed_pages) {
+            allowedPages = user.allowed_pages.split(',').map(p => p.trim());
+        }
+
+        allowedPages.forEach(p => {
+            const el = document.getElementById('edit-perm-' + p);
+            if (el) el.checked = true;
+        });
+
+        // Hide section initially if user role is admin
+        const sectionEdit = document.getElementById('edit_allowed_pages_section');
+        if (user.role === 'admin') {
+            sectionEdit.classList.add('hidden');
+        } else {
+            sectionEdit.classList.remove('hidden');
+        }
+
+        openModal('edit-user-modal');
     }
 </script>
 
